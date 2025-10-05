@@ -81,61 +81,90 @@ def _verdict_from_score(score: int, hits: int, patterns: int, doom: int, scam: i
     return "Thông tin có vẻ thật/an toàn", max(75, truth_confidence), "Không phát hiện dấu hiệu đáng kể" + bonus
 
 
+def _normalize_text(text: str) -> str:
+    """Corrects common misspellings and variations."""
+    t = text.lower()
+    corrections = {
+        "mien phi": "miễn phí",
+        "mienphí": "miễn phí",
+        "kíchđộng": "kích động",
+        "kich dong": "kích động",
+        "luadao": "lừa đảo",
+        "gia mao": "giả mạo",
+        "giamạo": "giả mạo",
+    }
+    for wrong, right in corrections.items():
+        t = t.replace(wrong, right)
+    return t
+
+
 def analyze_text(text: str) -> Dict[str, object]:
     if not text:
         return {"risk_level": "Không có dữ liệu", "risk_score": 0, "hits": 0, "patterns": [], "verdict": "Không đủ dữ liệu", "confidence": 0, "rationale": ""}
 
-    t = text.lower()
-    hits = _count_keyword_hits(text)
+    normalized_text = _normalize_text(text)
+    hits = _count_keyword_hits(normalized_text)
 
     pattern_hits: List[str] = []
     for pat in SUSPICIOUS_PATTERNS:
-        if pat.search(text):
+        if pat.search(normalized_text):
             pattern_hits.append(pat.pattern)
 
     doom_hits = 0
     for pat in DOOMSDAY_PATTERNS:
-        if pat.search(text):
+        if pat.search(normalized_text):
             doom_hits += 1
             pattern_hits.append(pat.pattern)
 
     scam_hits = 0
     for pat in SCAM_PATTERNS:
-        if pat.search(text):
+        if pat.search(normalized_text):
             scam_hits += 1
             pattern_hits.append(pat.pattern)
 
     astro_hits = 0
     for pat in ASTRO_HOAX:
-        if pat.search(text):
+        if pat.search(normalized_text):
             astro_hits += 1
             pattern_hits.append(pat.pattern)
 
-    white_hits = sum(1 for p in PHRASES_WHITE if p in t)
-    black_hits = sum(1 for p in PHRASES_BLACK if p in t)
+    white_hits = sum(1 for p in PHRASES_WHITE if p in normalized_text)
+    black_hits = sum(1 for p in PHRASES_BLACK if p in normalized_text)
 
-    # Score with stronger astro/black influence
-    risk_score = hits * 10 + (len(pattern_hits) * 8) + (doom_hits * 25) + (scam_hits * 45) + (black_hits * 18) + (astro_hits * 30)
-    risk_score = max(0, risk_score - white_hits * 22)
+    # Calculate keyword density
+    word_count = len(normalized_text.split())
+    keyword_density = (hits / word_count) * 100 if word_count > 0 else 0
 
-    if len(text) < 30 and hits >= 1:
-        risk_score += 5
-    if doom_hits >= 2 or black_hits >= 2 or astro_hits >= 1:
-        risk_score += 25
+    # Refined scoring logic
+    risk_score = (keyword_density * 15) + (len(pattern_hits) * 5) + (doom_hits * 20) + (scam_hits * 40) + (black_hits * 20) + (astro_hits * 25)
+    risk_score = max(0, risk_score - white_hits * 25)
+
+    # Boost score for high-impact conditions
+    if doom_hits >= 2 or black_hits >= 2 or astro_hits >= 1 or scam_hits >= 1:
+        risk_score += 30
+
+    # Adjust for text length vs. hits
+    if word_count < 50 and hits > 2:
+        risk_score += 15 # High density in short text is suspicious
+
+    risk_score = min(100, int(risk_score)) # Cap score at 100
 
     risk_level = 'Thấp'
-    if risk_score >= 80:
+    if risk_score >= 75:
         risk_level = 'Cao'
     elif risk_score >= 40:
         risk_level = 'Trung bình'
 
     verdict, confidence, rationale = _verdict_from_score(risk_score, hits, len(pattern_hits), doom_hits, scam_hits, white_hits, black_hits, astro_hits)
 
-    if verdict == "Thông tin giả/vi phạm":
-        risk_level = 'Cao' if (scam_hits >= 1 or doom_hits >= 1 or black_hits >= 2 or astro_hits >= 1 or risk_score >= 80) else 'Trung bình'
+    if verdict == "Thông tin giả/vi phạm" and risk_level != 'Cao':
+        risk_level = 'Cao' if (scam_hits >= 1 or doom_hits >= 2 or black_hits >= 2 or astro_hits >= 1) else 'Trung bình'
+
 
     return {
         "hits": hits,
+        "word_count": word_count,
+        "keyword_density": round(keyword_density, 2),
         "pattern_hits": pattern_hits,
         "doom_hits": doom_hits,
         "scam_hits": scam_hits,

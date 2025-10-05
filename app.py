@@ -81,16 +81,26 @@ class App(tk.Tk):
         if not url:
             messagebox.showwarning("Thiếu dữ liệu", "Vui lòng nhập URL")
             return
-        result = analyze_url(url)
-        self._display_summary_plus_json(self.url_result, result)
+        try:
+            result = analyze_url(url)
+            self._display_summary_plus_json(self.url_result, result)
+        except Exception as e:
+            self.url_result.delete("1.0", tk.END)
+            self.url_result.insert(tk.END, f"Lỗi không xác định:\n{e}")
+            messagebox.showerror("Lỗi", f"Đã xảy ra lỗi trong quá trình phân tích:\n{e}")
 
     def _on_check_text(self) -> None:
         text = self.text_input.get("1.0", tk.END).strip()
         if not text:
             messagebox.showwarning("Thiếu dữ liệu", "Vui lòng nhập văn bản")
             return
-        result = analyze_text(text)
-        self._display_summary_plus_json(self.text_result, result)
+        try:
+            result = analyze_text(text)
+            self._display_summary_plus_json(self.text_result, result)
+        except Exception as e:
+            self.text_result.delete("1.0", tk.END)
+            self.text_result.insert(tk.END, f"Lỗi không xác định:\n{e}")
+            messagebox.showerror("Lỗi", f"Đã xảy ra lỗi trong quá trình phân tích:\n{e}")
 
     def _on_pick_file(self) -> None:
         path = filedialog.askopenfilename(filetypes=[
@@ -107,8 +117,13 @@ class App(tk.Tk):
         if not path:
             messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn tập tin")
             return
-        result = analyze_file(path)
-        self._display_summary_plus_json(self.file_result, result)
+        try:
+            result = analyze_file(path)
+            self._display_summary_plus_json(self.file_result, result)
+        except Exception as e:
+            self.file_result.delete("1.0", tk.END)
+            self.file_result.insert(tk.END, f"Lỗi không xác định:\n{e}")
+            messagebox.showerror("Lỗi", f"Đã xảy ra lỗi trong quá trình phân tích:\n{e}")
 
     def _display_summary_plus_json(self, widget: tk.Text, payload: Any) -> None:
         import json
