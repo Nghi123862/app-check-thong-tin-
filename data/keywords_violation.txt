@@ -10,3 +10,9 @@ phỉ báng
 xuyên tạc
 kích dục
 khiêu dâm
+# English keywords
+fake news
+scam
+porn
+hate speech
+terror

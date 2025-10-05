@@ -28,6 +28,35 @@ PHRASES_BLACK = _load_lines('phrases_blacklist.txt')
 KEYWORDS = _load_keywords()
 
 
+def _get_word_count(text: str) -> int:
+    return len(re.findall(r'\w+', text))
+
+
+MISSPELLINGS = {
+    # General typos
+    "lunừa đảo": "lừa đảo", "lua đảo": "lừa đảo", "lừa đao": "lừa đảo",
+    "kích độngg": "kích động", "kich động": "kích động", "kik động": "kích động",
+    "bạo lựcc": "bạo lực", "bạo lwcj": "bạo lực", "bao lực": "bạo lực",
+    "thù hằnn": "thù hằn", "thu hằn": "thù hằn", "thù hăn": "thù hằn",
+    "khủng bô": "khủng bố", "khủngbố": "khủng bố",
+    "xuyên tạcc": "xuyên tạc", "xuyen tac": "xuyên tạc",
+    "phỉ bángg": "phỉ báng", "phi bang": "phỉ báng",
+    # English misspellings
+    "fak news": "fake news", "fakenews": "fake news",
+    "scamm": "scam",
+    "porrn": "porn",
+    "hat speech": "hate speech", "hatespeech": "hate speech",
+    "terrorr": "terror", "teror": "terror",
+}
+
+
+def _normalize_text(text: str) -> str:
+    t = text.lower()
+    for mis, cor in MISSPELLINGS.items():
+        t = t.replace(mis, cor)
+    return t
+
+
 def _count_keyword_hits(text: str) -> int:
     t = text.lower()
     total = 0
@@ -85,49 +114,42 @@ def analyze_text(text: str) -> Dict[str, object]:
     if not text:
         return {"risk_level": "Không có dữ liệu", "risk_score": 0, "hits": 0, "patterns": [], "verdict": "Không đủ dữ liệu", "confidence": 0, "rationale": ""}
 
-    t = text.lower()
-    hits = _count_keyword_hits(text)
+    normalized_text = _normalize_text(text)
+    word_count = _get_word_count(normalized_text)
+    hits = _count_keyword_hits(normalized_text)
 
     pattern_hits: List[str] = []
     for pat in SUSPICIOUS_PATTERNS:
-        if pat.search(text):
+        if pat.search(normalized_text):
             pattern_hits.append(pat.pattern)
 
-    doom_hits = 0
-    for pat in DOOMSDAY_PATTERNS:
-        if pat.search(text):
-            doom_hits += 1
+    doom_hits = sum(1 for pat in DOOMSDAY_PATTERNS if pat.search(normalized_text))
+    scam_hits = sum(1 for pat in SCAM_PATTERNS if pat.search(normalized_text))
+    astro_hits = sum(1 for pat in ASTRO_HOAX if pat.search(normalized_text))
+
+    # Add patterns that were hit to the list
+    for pat in DOOMSDAY_PATTERNS + SCAM_PATTERNS + ASTRO_HOAX:
+        if pat.search(normalized_text):
             pattern_hits.append(pat.pattern)
 
-    scam_hits = 0
-    for pat in SCAM_PATTERNS:
-        if pat.search(text):
-            scam_hits += 1
-            pattern_hits.append(pat.pattern)
+    white_hits = sum(1 for p in PHRASES_WHITE if p in normalized_text)
+    black_hits = sum(1 for p in PHRASES_BLACK if p in normalized_text)
 
-    astro_hits = 0
-    for pat in ASTRO_HOAX:
-        if pat.search(text):
-            astro_hits += 1
-            pattern_hits.append(pat.pattern)
+    # Risk scoring with keyword density
+    density = (hits / word_count) * 100 if word_count > 0 else 0
+    density_score = min(density * 20, 50)  # Cap density score
 
-    white_hits = sum(1 for p in PHRASES_WHITE if p in t)
-    black_hits = sum(1 for p in PHRASES_BLACK if p in t)
-
-    # Score with stronger astro/black influence
-    risk_score = hits * 10 + (len(pattern_hits) * 8) + (doom_hits * 25) + (scam_hits * 45) + (black_hits * 18) + (astro_hits * 30)
+    risk_score = density_score + (len(pattern_hits) * 8) + (doom_hits * 25) + (scam_hits * 45) + (black_hits * 18) + (astro_hits * 30)
     risk_score = max(0, risk_score - white_hits * 22)
 
-    if len(text) < 30 and hits >= 1:
-        risk_score += 5
+    if word_count < 10 and hits >= 1:
+        risk_score += 10  # Higher risk for very short, impactful text
     if doom_hits >= 2 or black_hits >= 2 or astro_hits >= 1:
         risk_score += 25
 
     risk_level = 'Thấp'
-    if risk_score >= 80:
-        risk_level = 'Cao'
-    elif risk_score >= 40:
-        risk_level = 'Trung bình'
+    if risk_score >= 80: risk_level = 'Cao'
+    elif risk_score >= 40: risk_level = 'Trung bình'
 
     verdict, confidence, rationale = _verdict_from_score(risk_score, hits, len(pattern_hits), doom_hits, scam_hits, white_hits, black_hits, astro_hits)
 
@@ -135,16 +157,9 @@ def analyze_text(text: str) -> Dict[str, object]:
         risk_level = 'Cao' if (scam_hits >= 1 or doom_hits >= 1 or black_hits >= 2 or astro_hits >= 1 or risk_score >= 80) else 'Trung bình'
 
     return {
-        "hits": hits,
-        "pattern_hits": pattern_hits,
-        "doom_hits": doom_hits,
-        "scam_hits": scam_hits,
-        "astro_hits": astro_hits,
-        "white_hits": white_hits,
-        "black_hits": black_hits,
-        "risk_score": risk_score,
-        "risk_level": risk_level,
-        "verdict": verdict,
-        "confidence": confidence,
-        "rationale": rationale,
+        "hits": hits, "word_count": word_count, "density": f"{density:.2f}%",
+        "pattern_hits": pattern_hits, "doom_hits": doom_hits, "scam_hits": scam_hits,
+        "astro_hits": astro_hits, "white_hits": white_hits, "black_hits": black_hits,
+        "risk_score": risk_score, "risk_level": risk_level,
+        "verdict": verdict, "confidence": confidence, "rationale": rationale,
     }
