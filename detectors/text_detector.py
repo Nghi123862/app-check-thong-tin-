@@ -70,8 +70,20 @@ ASTRO_HOAX = [
     re.compile(r"lá\s*chắn\s*năng\s*lượng", re.IGNORECASE),
 ]
 
+# Simulation/test content cues
+SIMULATION_PATTERNS = [
+    re.compile(r"\b(giả định|mô phỏng|thử nghiệm|không có thật|dữ liệu giả|báo cáo giả)\b", re.IGNORECASE),
+    re.compile(r"nhằm mục đích kiểm tra", re.IGNORECASE),
+    re.compile(r"nhằm mục đích thử nghiệm", re.IGNORECASE),
+    re.compile(r"chỉ nhằm mục đích", re.IGNORECASE),
+]
 
-def _verdict_from_score(score: int, hits: int, patterns: int, doom: int, scam: int, white: int, black: int, astro: int) -> (str, int, str):
+
+def _verdict_from_score(score: int, hits: int, patterns: int, doom: int, scam: int, white: int, black: int, astro: int, sim: int) -> (str, int, str):
+    # If the text explicitly states it's a simulation, override other verdicts.
+    if sim >= 2:
+        return "Nội dung mô phỏng/thử nghiệm", 98, f"Văn bản tự nhận là giả định hoặc thử nghiệm ({sim} dấu hiệu)."
+
     truth_confidence = max(5, min(95, 95 - score))
     if doom >= 2 or scam >= 1 or black >= 2 or astro >= 1 or score >= 80:
         return "Thông tin giả/vi phạm", max(5, min(truth_confidence, 18)), f"Dấu hiệu ngày tận thế ({doom}), astro-hoax ({astro}), scam ({scam}), blacklist ({black}), từ khóa {hits}, mẫu {patterns}"
@@ -128,6 +140,12 @@ def analyze_text(text: str) -> Dict[str, object]:
             astro_hits += 1
             pattern_hits.append(pat.pattern)
 
+    simulation_hits = 0
+    for pat in SIMULATION_PATTERNS:
+        if pat.search(normalized_text):
+            simulation_hits += 1
+            pattern_hits.append(pat.pattern)
+
     white_hits = sum(1 for p in PHRASES_WHITE if p in normalized_text)
     black_hits = sum(1 for p in PHRASES_BLACK if p in normalized_text)
 
@@ -155,10 +173,12 @@ def analyze_text(text: str) -> Dict[str, object]:
     elif risk_score >= 40:
         risk_level = 'Trung bình'
 
-    verdict, confidence, rationale = _verdict_from_score(risk_score, hits, len(pattern_hits), doom_hits, scam_hits, white_hits, black_hits, astro_hits)
+    verdict, confidence, rationale = _verdict_from_score(risk_score, hits, len(pattern_hits), doom_hits, scam_hits, white_hits, black_hits, astro_hits, simulation_hits)
 
     if verdict == "Thông tin giả/vi phạm" and risk_level != 'Cao':
         risk_level = 'Cao' if (scam_hits >= 1 or doom_hits >= 2 or black_hits >= 2 or astro_hits >= 1) else 'Trung bình'
+    elif verdict == "Nội dung mô phỏng/thử nghiệm":
+        risk_level = 'Thấp'
 
 
     return {
@@ -169,6 +189,7 @@ def analyze_text(text: str) -> Dict[str, object]:
         "doom_hits": doom_hits,
         "scam_hits": scam_hits,
         "astro_hits": astro_hits,
+        "simulation_hits": simulation_hits,
         "white_hits": white_hits,
         "black_hits": black_hits,
         "risk_score": risk_score,

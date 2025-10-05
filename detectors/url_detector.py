@@ -82,6 +82,20 @@ def analyze_url(url: str) -> Dict[str, object]:
     if in_white:
         risk_score -= 25
         indicators.append(f"Tên miền thuộc nguồn tin uy tín: {domain}")
+
+    # Check for suspicious TLDs
+    suspicious_tlds = ['.test', '.xyz', '.info', '.top', '.loan', '.stream']
+    if any(domain.endswith(tld) for tld in suspicious_tlds):
+        risk_score += 40
+        indicators.append(f"Tên miền sử dụng TLD có rủi ro cao: {domain.split('.')[-1]}")
+
+    # Check for suspicious keywords in domain
+    suspicious_keywords = ['fake', 'scam', 'phishing', 'malware', 'fraud', 'free-money']
+    for keyword in suspicious_keywords:
+        if keyword in domain:
+            risk_score += 35
+            indicators.append(f"Tên miền chứa từ khóa đáng ngờ: '{keyword}'")
+
     if not resolved_ip:
         risk_score += 15
         indicators.append("Không phân giải được DNS cho tên miền")

@@ -1,6 +1,10 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import Any
+from updater import update_rules
+
+# Run the updater first to ensure rules are in place before detectors are loaded.
+update_rules()
 
 try:
     from detectors import analyze_url, analyze_text, analyze_file
@@ -128,19 +132,41 @@ class App(tk.Tk):
     def _display_summary_plus_json(self, widget: tk.Text, payload: Any) -> None:
         import json
         widget.delete("1.0", tk.END)
-        verdict = payload.get("verdict", "") if isinstance(payload, dict) else ""
-        confidence = payload.get("confidence", "") if isinstance(payload, dict) else ""
-        risk = payload.get("risk_level", "") if isinstance(payload, dict) else ""
-        rationale = payload.get("rationale", "") if isinstance(payload, dict) else ""
+
+        if not isinstance(payload, dict):
+            widget.insert(tk.END, str(payload))
+            return
+
+        verdict = payload.get("verdict", "")
+        confidence = payload.get("confidence", "")
+        risk = payload.get("risk_level", "")
+        rationale = payload.get("rationale", "")
+
         if verdict:
             widget.insert(tk.END, f"Kết luận: {verdict} — Độ tin cậy: {confidence}% — Mức rủi ro: {risk}\n")
             if rationale:
                 widget.insert(tk.END, f"Lý do: {rationale}\n\n")
+
+        # Handle nested text analysis for URL results
+        text_summary = payload.pop("text_analysis_summary", None)
+
         try:
+            # Display the main payload (without the nested part)
             widget.insert(tk.END, json.dumps(payload, ensure_ascii=False, indent=2))
         except Exception:
             widget.insert(tk.END, str(payload))
 
+        # Display the text analysis summary if it exists
+        if text_summary and isinstance(text_summary, dict):
+            widget.insert(tk.END, "\n\n--- Phân tích nội dung trang web ---\n")
+            text_verdict = text_summary.get('verdict', 'N/A')
+            text_risk = text_summary.get('risk_level', 'N/A')
+            text_rationale = text_summary.get('rationale', 'N/A')
+            widget.insert(tk.END, f"Kết luận nội dung: {text_verdict}\n")
+            widget.insert(tk.END, f"Mức rủi ro nội dung: {text_risk}\n")
+            widget.insert(tk.END, f"Lý do: {text_rationale}\n")
+
 
 if __name__ == "__main__":
+    # Launch the main application window.
     App().mainloop()
